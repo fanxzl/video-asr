@@ -22,16 +22,15 @@
 
 ## 快速安装
 
-### 方式一：一键安装（Windows）
+### 方式一：远程一键安装（Windows，推荐）
 
 ```powershell
-# 克隆仓库后，在项目根目录运行：
-git clone https://github.com/fanxzl/video-asr.git
-cd video-asr
-.\scripts\install.ps1
+iex (irm https://raw.githubusercontent.com/fanxzl/video-asr/main/scripts/install.ps1)
 ```
 
-自动安装 ffmpeg、创建 Python 虚拟环境、下载模型、注册 `transcribe` 命令。
+自动下载仓库、安装 ffmpeg、创建 Python 虚拟环境、下载模型、注册 `transcribe` 命令。
+
+> 👉 已传 PyPI 后也可直接用 `pip install video-asr`。
 
 ### 方式二：pip（本地安装）
 

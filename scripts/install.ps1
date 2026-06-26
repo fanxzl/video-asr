@@ -4,10 +4,18 @@
 .DESCRIPTION
     自动处理所有前置依赖（ffmpeg、Python 虚拟环境、模型缓存），
     完成后即可用 `transcribe` 命令转写视频。
+
+    两种用法：
+      远程安装（推荐）:
+        iex (irm https://raw.githubusercontent.com/fanxzl/video-asr/main/scripts/install.ps1)
+
+      本地安装（已 clone 仓库）:
+        .\scripts\install.ps1
 .EXAMPLE
-    .\install.ps1                              # 默认安装
-    .\install.ps1 -NoModelCache                # 跳过模型缓存预热
-    .\install.ps1 -InstallDir D:\tools\video-asr  # 自定义安装位置
+    iex (irm https://raw.githubusercontent.com/fanxzl/video-asr/main/scripts/install.ps1)
+
+    .\install.ps1 -NoModelCache
+    .\install.ps1 -InstallDir D:\tools\video-asr
 #>
 
 param(
@@ -21,10 +29,43 @@ param(
 $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = "video-asr 安装中..."
 
-# --------------- 判断项目根目录 ---------------
+# --------------- 确定项目根目录 ---------------
+$IsRemote = [string]::IsNullOrEmpty($PSScriptRoot)
 if (-not $InstallDir) {
-    # 脚本在 scripts/ 下，项目根目录是它的父目录
-    $InstallDir = (Get-Item $PSScriptRoot).Parent.FullName
+    if ($IsRemote) {
+        # 远程安装：clone 到当前目录
+        $InstallDir = Join-Path (Get-Location) "video-asr"
+    } else {
+        # 本地安装：脚本在 scripts/ 下，项目根是它的父目录
+        $InstallDir = (Get-Item $PSScriptRoot).Parent.FullName
+    }
+}
+
+# --------------- 远程模式：clone 仓库 ---------------
+if ($IsRemote) {
+    Write-Host "[1] 下载 video-asr..." -ForegroundColor Yellow
+    # 检查 git
+    $gitPath = (Get-Command "git" -ErrorAction SilentlyContinue).Source
+    if (-not $gitPath) {
+        Write-Host "  → 尝试通过 winget 安装 git..." -ForegroundColor Gray
+        try {
+            winget install Git.Git --accept-source-agreements --silent 2>&1 | Out-Null
+            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+        } catch {
+            Write-Host "  ❌ 需要 Git 来下载。请先安装: https://git-scm.com/" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    if (Test-Path $InstallDir) {
+        Write-Host "  → 目录已存在，更新..." -ForegroundColor Gray
+        Push-Location $InstallDir
+        git pull 2>&1 | Out-Null
+        Pop-Location
+    } else {
+        git clone "https://github.com/fanxzl/video-asr.git" $InstallDir 2>&1
+        Write-Host "  ✅ 下载完成" -ForegroundColor Green
+    }
 }
 
 Write-Host "`n========================================" -ForegroundColor Cyan
@@ -32,9 +73,9 @@ Write-Host "  video-asr v1.0.0 安装" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  安装目录: $InstallDir`n"
 
-# --------------- 1. 检查 ffmpeg ---------------
+# --------------- 2. 检查 ffmpeg ---------------
 if (-not $SkipFfmpeg) {
-    Write-Host "[1/5] 检查 ffmpeg..." -ForegroundColor Yellow
+    Write-Host "▸ 检查 ffmpeg..." -ForegroundColor Yellow
     $ffmpegPath = (Get-Command "ffmpeg" -ErrorAction SilentlyContinue).Source
     if (-not $ffmpegPath) {
         Write-Host "  → 未检测到 ffmpeg，尝试通过 winget 安装..." -ForegroundColor Gray
@@ -57,11 +98,11 @@ if (-not $SkipFfmpeg) {
         Write-Host "  ✅ ffmpeg: $ffmpegPath" -ForegroundColor Green
     }
 } else {
-    Write-Host "[1/5] 跳过 ffmpeg 检查" -ForegroundColor Gray
+    Write-Host "▸ 跳过 ffmpeg 检查" -ForegroundColor Gray
 }
 
-# --------------- 2. 检测 CUDA ---------------
-Write-Host "[2/5] 检测 GPU..." -ForegroundColor Yellow
+# --------------- 3. 检测 CUDA ---------------
+Write-Host "▸ 检测 GPU..." -ForegroundColor Yellow
 try {
     $nvidiaSmi = Get-Command "nvidia-smi" -ErrorAction SilentlyContinue
     if ($nvidiaSmi) {
@@ -77,7 +118,7 @@ try {
 }
 
 # --------------- 3. 创建虚拟环境 + 安装依赖 ---------------
-Write-Host "[3/5] 创建 Python 虚拟环境..." -ForegroundColor Yellow
+Write-Host "▸ 创建 Python 虚拟环境..." -ForegroundColor Yellow
 $venvPath = Join-Path $InstallDir ".venv_asr"
 
 # 检测系统 Python
@@ -150,7 +191,7 @@ try {
 }
 
 # --------------- 4. 创建启动脚本（cmd 入口） ---------------
-Write-Host "[4/5] 创建命令入口..." -ForegroundColor Yellow
+Write-Host "▸ 创建命令入口..." -ForegroundColor Yellow
 
 # 创建一个 bat 包装器，让 transcribe 命令全局可用
 $batPath = Join-Path $InstallDir "transcribe.bat"
@@ -176,7 +217,7 @@ Write-Host "  ✅ 可在终端中直接使用: transcribe <视频文件>" -Foreg
 
 # --------------- 5. 模型缓存预热 ---------------
 if (-not $NoModelCache) {
-    Write-Host "[5/5] 预热模型缓存（首次下载 ~3GB）..." -ForegroundColor Yellow
+    Write-Host "▸ 预热模型缓存（首次下载 ~3GB）..." -ForegroundColor Yellow
     Write-Host "  → 这只需一次，后续完全离线使用" -ForegroundColor Gray
     Write-Host "  → 按 Ctrl+C 可跳过（安装后用 --stdout 触发）" -ForegroundColor Gray
 
@@ -203,11 +244,11 @@ print('OK')
         if (Test-Path $silentWav) { Remove-Item $silentWav -Force }
     }
 } else {
-    Write-Host "[5/5] 跳过模型缓存预热" -ForegroundColor Gray
+    Write-Host "▸ 跳过模型缓存预热" -ForegroundColor Gray
 }
 
 # --------------- 6. 模型推荐 ---------------
-Write-Host "[6/6] 检测 GPU 并推荐模型..." -ForegroundColor Yellow
+Write-Host "▸ 检测 GPU 并推荐模型..." -ForegroundColor Yellow
 try {
     & $pythonVenv -m video_asr --recommend 2>&1
 } catch {

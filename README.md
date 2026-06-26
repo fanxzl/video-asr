@@ -22,30 +22,29 @@
 
 ## Quick Install
 
-### Option 1: One-click (Windows)
+### Option 1: One-click remote install (Windows, recommended)
 
 ```powershell
-# Clone the repo and run from the project root:
-git clone https://github.com/fanxzl/video-asr.git
-cd video-asr
-.\scripts\install.ps1
+iex (irm https://raw.githubusercontent.com/fanxzl/video-asr/main/scripts/install.ps1)
 ```
 
-This installs ffmpeg, creates a Python venv, downloads the model, and makes `transcribe` globally available.
+This auto-clones the repo, installs ffmpeg, creates a Python venv, downloads the model, and makes `transcribe` globally available.
 
 > 👉 PyPI publish is planned — once live, `pip install video-asr` will work everywhere.
 
-### Option 2: pip (local install)
+### Option 2: Local install (after git clone)
 
 ```bash
-# From the project root (where pyproject.toml is):
+git clone https://github.com/fanxzl/video-asr.git
+cd video-asr
 pip install -e .
 ```
 
-### Option 3: uv (lightning fast)
+### Option 3: uv
 
 ```bash
-# From the project root:
+git clone https://github.com/fanxzl/video-asr.git
+cd video-asr
 uv tool install .
 ```
 
