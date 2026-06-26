@@ -10,6 +10,8 @@ Usage:
 """
 
 import argparse
+import glob
+import importlib
 import json
 import os
 import re
@@ -18,6 +20,20 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# Defaults / config
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CONFIG = {
+    "model": "large-v3",
+    "compute_type": "float16",
+    "beam_size": 8,
+    "backend": "auto",
+    "output": "txt",
+    "output_dir": "./output",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -46,13 +62,14 @@ _MODEL_VRAM_MB = {
 }
 
 def detect_gpu_details():
-    """Return dict with GPU info or None if CPU-only."""
+    """Return dict with GPU info or baseline if CPU-only."""
     info = {
         "name": None,
         "vram_mb": 0,
         "cuda_version": None,
         "sm": None,
         "has_cuda": False,
+        "msg": "CUDA is not available — will use CPU (slow)",
     }
     try:
         import torch
@@ -64,11 +81,10 @@ def detect_gpu_details():
         info["sm"] = f"{cap[0]}.{cap[1]}"
         props = torch.cuda.get_device_properties(0)
         info["vram_mb"] = props.total_memory // (1024 * 1024)
-        # CUDA version
-        ver = torch.version.cuda
-        info["cuda_version"] = ver
-    except Exception:
-        pass
+        info["cuda_version"] = torch.version.cuda
+        info["msg"] = f"GPU: {info['name']} (sm_{info['sm']})"
+    except Exception as e:
+        info["msg"] = f"GPU check failed: {e}"
     return info
 
 
@@ -89,11 +105,16 @@ def build_recommendations(vram_mb, reserve_mb=512):
     return results
 
 
+def format_vram(vram):
+    """Format VRAM in MB to human-readable string."""
+    return f"~{vram / 1024:.1f} GB" if vram > 1024 else f"~{vram} MB"
+
+
 def format_recommendations(gpu_info, recs):
     """Build a printable recommendation table."""
+    vram_gb = gpu_info["vram_mb"] / 1024
     lines = []
-    sep = "─" * 60
-    lines.append(f"  GPU: {gpu_info['name']}  ({gpu_info['vram_mb'] // 1024}.{gpu_info['vram_mb'] % 1024 // 103} GB)")
+    lines.append(f"  GPU: {gpu_info['name']}  ({vram_gb:.1f} GB)")
     lines.append(f"  VRAM: {gpu_info['vram_mb']} MB  |  CUDA: {gpu_info['cuda_version']}  |  SM: {gpu_info['sm']}")
     lines.append("")
     lines.append("  推荐方案（按质量排序，仅显示本机能跑的）:")
@@ -108,11 +129,22 @@ def format_recommendations(gpu_info, recs):
         tag = "  ← 推荐" if best else ""
         q_stars = "★" * quality + "☆" * (5 - quality)
         s_stars = "★" * speed + "☆" * (5 - speed)
-        vram_str = f"~{vram // 1024}.{vram % 1024 // 103} GB" if vram > 1024 else f"~{vram} MB"
+        vram_str = format_vram(vram)
         lines.append(f"  {i:>2}. {model:<12} {ct:<10} {vram_str:>8} {s_stars:<8} {q_stars}{tag}")
 
     lines.append("")
     return "\n".join(lines)
+
+
+def _show_recommendations(gpu_info):
+    """Print recommendations table; return recs list. Exits if no GPU."""
+    if not gpu_info["has_cuda"]:
+        print("[error] No GPU detected", file=sys.stderr)
+        sys.exit(1)
+    recs = build_recommendations(gpu_info["vram_mb"])
+    print(file=sys.stderr)
+    print(format_recommendations(gpu_info, recs), file=sys.stderr)
+    return recs
 
 
 # ---------------------------------------------------------------------------
@@ -122,57 +154,32 @@ def format_recommendations(gpu_info, recs):
 def get_config_dir():
     """Return platform-appropriate config directory."""
     if sys.platform == "win32":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        base = os.environ.get("APPDATA", Path.home())
     else:
-        base = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        base = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
     return Path(base) / "video-asr"
 
 
 def load_config():
     """Load saved config or return defaults."""
     cfg_path = get_config_dir() / "config.json"
-    defaults = {
-        "model": "large-v3",
-        "compute_type": "float16",
-        "beam_size": 8,
-        "backend": "auto",
-        "output": "txt",
-        "output_dir": "./output",
-    }
+    config = dict(_DEFAULT_CONFIG)
     if cfg_path.exists():
         try:
             data = json.loads(cfg_path.read_text(encoding="utf-8"))
-            defaults.update(data)
+            config.update(data)
         except Exception:
             pass
-    return defaults
+    return config
 
 
-def save_config(config):
+def save_config(config, path=None):
     """Save config to persistent file."""
-    cfg_dir = get_config_dir()
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path = cfg_dir / "config.json"
-    cfg_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    return cfg_path
-
-
-# ---------------------------------------------------------------------------
-# GPU check
-# ---------------------------------------------------------------------------
-
-def check_gpu():
-    """Check GPU availability and return (ok, message)."""
-    try:
-        import torch
-        if not torch.cuda.is_available():
-            return False, "CUDA is not available — will use CPU (slow)"
-        cap = torch.cuda.get_device_capability(0)
-        name = torch.cuda.get_device_name(0)
-        msg = f"GPU: {name} (sm_{cap[0]}{cap[1]})"
-        return True, msg
-    except Exception as e:
-        return False, f"GPU check failed: {e}"
+    if path is None:
+        path = get_config_dir() / "config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -292,16 +299,10 @@ def transcribe_whisperx(audio_path, model_name="large-v3", compute_type="float16
 
 def detect_backend():
     """Return the name of the fastest available backend."""
-    try:
-        from faster_whisper import WhisperModel  # noqa
+    if importlib.util.find_spec("faster_whisper"):
         return "faster"
-    except ImportError:
-        pass
-    try:
-        import whisper  # noqa
+    if importlib.util.find_spec("whisper"):
         return "whisper"
-    except ImportError:
-        pass
     return None
 
 
@@ -455,52 +456,38 @@ def process_single(video_path, args):
         # ---- Output ----
         fmt = args.output
 
+        # Build the content
+        if fmt == "srt":
+            content = segments_to_srt(segments)
+            ext = ".srt"
+        elif fmt == "json":
+            content = segments_to_json(
+                segments, info if backend == "faster" else None
+            )
+            ext = ".json"
+        else:
+            content = segments_to_text(segments, diarize)
+            ext = ".txt"
+
         if args.stdout:
-            if fmt == "srt":
-                sys.stdout.write(segments_to_srt(segments))
-            elif fmt == "json":
-                sys.stdout.write(
-                    segments_to_json(
-                        segments, info if backend == "faster" else None
-                    )
-                )
-            else:
-                sys.stdout.write(segments_to_text(segments, diarize))
+            sys.stdout.write(content)
         else:
             output_dir = args.output_dir or "."
             stem = Path(video_path).stem
-            if fmt == "srt":
-                out_path = Path(output_dir) / f"{stem}.srt"
-                content = segments_to_srt(segments)
-            elif fmt == "json":
-                out_path = Path(output_dir) / f"{stem}.json"
-                content = segments_to_json(
-                    segments, info if backend == "faster" else None
-                )
-            else:
-                out_path = Path(output_dir) / f"{stem}.txt"
-                content = segments_to_text(segments, diarize)
-
+            out_path = Path(output_dir) / f"{stem}{ext}"
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Auto-numbering: never overwrite, always create new file
-            existing = sorted(
-                out_path.parent.glob(f"{out_path.stem}*{out_path.suffix}")
-            )
+            # Auto-numbering: never overwrite
+            pattern = rf"^{re.escape(stem)}\s*\((\d+)\){re.escape(ext)}$"
+            existing = sorted(out_path.parent.glob(f"{stem}*{ext}"))
             if existing:
-                max_num = 0
+                max_num = -1
                 for f in existing:
-                    f_stem = f.stem
-                    if f_stem == out_path.stem:
-                        max_num = max(max_num, 0)
-                    else:
-                        m = re.search(r"\((\d+)\)$", f_stem)
-                        if m:
-                            max_num = max(max_num, int(m.group(1)))
-                out_path = (
-                    out_path.parent
-                    / f"{out_path.stem} ({max_num + 1}){out_path.suffix}"
-                )
+                    m = re.match(pattern, f.name)
+                    if m:
+                        max_num = max(max_num, int(m.group(1)))
+                if max_num >= 0:
+                    out_path = out_path.parent / f"{stem} ({max_num + 1}){ext}"
 
             out_path.write_text(content, encoding="utf-8")
             print(f"[output] {out_path}", file=sys.stderr)
@@ -531,13 +518,13 @@ def build_parser():
     parser.add_argument(
         "--backend", "-b",
         choices=["auto", "faster", "whisper", "whisperx"],
-        default="auto",
+        default=_DEFAULT_CONFIG["backend"],
         help="Transcription backend (default: auto → faster-whisper)",
     )
 
     # Model
     parser.add_argument(
-        "--model", "-m", default="large-v3",
+        "--model", "-m", default=_DEFAULT_CONFIG["model"],
         help="Whisper model size: tiny/base/small/medium/large-v3",
     )
     parser.add_argument(
@@ -547,26 +534,26 @@ def build_parser():
     )
     parser.add_argument(
         "--compute-type",
-        default="float16",
+        default=_DEFAULT_CONFIG["compute_type"],
         choices=["int8", "float16", "float32"],
         help="faster-whisper precision: "
              "float16 (best balance), int8 (less VRAM), float32 (highest)",
     )
     parser.add_argument(
-        "--beam-size", type=int, default=8,
+        "--beam-size", type=int, default=_DEFAULT_CONFIG["beam_size"],
         help="Beam search width (default: 8; lower = faster, higher = more accurate)",
     )
 
     # Output
     parser.add_argument(
         "--output", "-o",
-        default="txt",
+        default=_DEFAULT_CONFIG["output"],
         choices=["txt", "srt", "json"],
         help="Output format (default: txt)",
     )
     parser.add_argument(
         "--output-dir",
-        default="./output",
+        default=_DEFAULT_CONFIG["output_dir"],
         help="Output directory (default: ./output/)",
     )
     parser.add_argument(
@@ -613,6 +600,8 @@ def build_parser():
 def main():
     """Main entry point."""
     parser = build_parser()
+    # Apply saved config as defaults (CLI flags override via parse_args)
+    parser.set_defaults(**load_config())
     args = parser.parse_args()
 
     # ---- Detection / setup commands (no video needed) ----
@@ -642,20 +631,12 @@ def main():
 
     # --list-models
     if args.list_models:
-        if not gpu_info["has_cuda"]:
-            print("[error] No GPU detected, cannot recommend models",
-                  file=sys.stderr)
-            sys.exit(1)
-        recs = build_recommendations(gpu_info["vram_mb"])
-        print(format_recommendations(gpu_info, recs), file=sys.stderr)
+        _show_recommendations(gpu_info)
         return
 
     # --recommend (interactive)
     if args.recommend:
-        if not gpu_info["has_cuda"]:
-            print("[error] No GPU detected", file=sys.stderr)
-            sys.exit(1)
-        recs = build_recommendations(gpu_info["vram_mb"])
+        recs = _show_recommendations(gpu_info)
         print(file=sys.stderr)
         print(format_recommendations(gpu_info, recs), file=sys.stderr)
 
@@ -690,33 +671,15 @@ def main():
         print("[error] No video files specified. Use transcribe --help for usage.",
               file=sys.stderr)
         sys.exit(1)
-    # Apply saved config as defaults (CLI flags override)
-    saved = load_config()
-    if not hasattr(args, "_config_loaded"):
-        for key, val in saved.items():
-            if hasattr(args, key):
-                current = getattr(args, key)
-                # Only apply if user didn't explicitly set it
-                if key == "model" and args.model == "large-v3" and val != "large-v3":
-                    setattr(args, key, val)
-                if key == "compute_type" and args.compute_type == "float16" and val != "float16":
-                    setattr(args, key, val)
-                if key == "beam_size" and args.beam_size == 8 and val != 8:
-                    setattr(args, key, val)
-                if key == "output_dir" and args.output_dir == "./output" and val != "./output":
-                    setattr(args, key, val)
-        args._config_loaded = True
 
-    # GPU check (already done)
-    ok, msg = check_gpu()
-    if not ok:
-        print(f"[warn] {msg}", file=sys.stderr)
+    # GPU message
+    if not gpu_info["has_cuda"]:
+        print(f"[warn] {gpu_info['msg']}", file=sys.stderr)
 
     # Expand patterns
-    import glob as glob_mod
     video_files = []
     for pattern in args.videos:
-        matched = glob_mod.glob(pattern, recursive=False)
+        matched = glob.glob(pattern, recursive=False)
         if matched:
             video_files.extend(Path(p) for p in matched)
         else:
