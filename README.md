@@ -25,7 +25,9 @@
 ### Option 1: One-click (Windows)
 
 ```powershell
-# Download the repo, then:
+# Clone the repo and run from the project root:
+git clone https://github.com/fanxzl/video-asr.git
+cd video-asr
 .\scripts\install.ps1
 ```
 
@@ -36,14 +38,14 @@ This installs ffmpeg, creates a Python venv, downloads the model, and makes `tra
 ### Option 2: pip (local install)
 
 ```bash
-# From the project directory:
+# From the project root (where pyproject.toml is):
 pip install -e .
 ```
 
 ### Option 3: uv (lightning fast)
 
 ```bash
-# From the project directory:
+# From the project root:
 uv tool install .
 ```
 

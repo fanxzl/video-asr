@@ -25,7 +25,9 @@
 ### 方式一：一键安装（Windows）
 
 ```powershell
-# 下载仓库后，在项目目录运行：
+# 克隆仓库后，在项目根目录运行：
+git clone https://github.com/fanxzl/video-asr.git
+cd video-asr
 .\scripts\install.ps1
 ```
 

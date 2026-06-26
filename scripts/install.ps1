@@ -21,13 +21,10 @@ param(
 $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = "video-asr 安装中..."
 
-# --------------- 判断脚本所在位置 ---------------
+# --------------- 判断项目根目录 ---------------
 if (-not $InstallDir) {
-    $InstallDir = $PSScriptRoot
-}
-$InstallDir = Resolve-Path $InstallDir -ErrorAction SilentlyContinue 2>$null
-if (-not $InstallDir) {
-    $InstallDir = $PSScriptRoot
+    # 脚本在 scripts/ 下，项目根目录是它的父目录
+    $InstallDir = (Get-Item $PSScriptRoot).Parent.FullName
 }
 
 Write-Host "`n========================================" -ForegroundColor Cyan
