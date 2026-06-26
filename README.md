@@ -1,5 +1,11 @@
 # video-asr
 
+<div align="center">
+
+[English](README.md) | [中文](README.zh.md)
+
+</div>
+
 > **Local video-to-text (ASR).** Offline transcription using faster-whisper large-v3 on your NVIDIA GPU. Data stays local — nothing uploaded.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
