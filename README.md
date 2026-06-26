@@ -31,17 +31,20 @@
 
 This installs ffmpeg, creates a Python venv, downloads the model, and makes `transcribe` globally available.
 
-### Option 2: pip (cross-platform)
+> 👉 PyPI publish is planned — once live, `pip install video-asr` will work everywhere.
+
+### Option 2: pip (local install)
 
 ```bash
-pip install video-asr
-# Ensure ffmpeg is on your PATH
+# From the project directory:
+pip install -e .
 ```
 
 ### Option 3: uv (lightning fast)
 
 ```bash
-uv tool install video-asr
+# From the project directory:
+uv tool install .
 ```
 
 ## Usage

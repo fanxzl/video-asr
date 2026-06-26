@@ -31,17 +31,18 @@
 
 自动安装 ffmpeg、创建 Python 虚拟环境、下载模型、注册 `transcribe` 命令。
 
-### 方式二：pip（跨平台）
+### 方式二：pip（本地安装）
 
 ```bash
-pip install video-asr
-# 确保 ffmpeg 已在 PATH 中
+# 在项目目录下：
+pip install -e .
 ```
 
 ### 方式三：uv（极速）
 
 ```bash
-uv tool install video-asr
+# 在项目目录下：
+uv tool install .
 ```
 
 ## 使用方法
