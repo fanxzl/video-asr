@@ -624,7 +624,7 @@ def main():
     # Detect GPU
     gpu_info = detect_gpu_details()
     if gpu_info["has_cuda"]:
-        print(f"[env] GPU: {gpu_info['name']}  ({gpu_info['vram_mb'] // 1024} GB VRAM)",
+        print(f"[env] GPU: {gpu_info['name']}  ({gpu_info['vram_mb'] / 1024:.1f} GB VRAM)",
               file=sys.stderr)
     else:
         print(f"[env] No CUDA GPU detected — will use CPU (very slow)", file=sys.stderr)

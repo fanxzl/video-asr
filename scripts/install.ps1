@@ -140,9 +140,10 @@ $pythonVenv = Join-Path $venvPath "Scripts" "python.exe"
 # 验证 GPU 可访问
 Write-Host "  → 验证 GPU 可访问..." -ForegroundColor Gray
 try {
-    $gpuOk = & $pythonVenv -c "import torch; print(torch.cuda.is_available())" 2>$null
+    $gpuInfo = & $pythonVenv -c "import torch; a=torch.cuda.is_available(); print(a); print(torch.cuda.get_device_name(0) if a else '')" 2>$null
+    $gpuOk = $gpuInfo[0]
     if ($gpuOk -eq "True") {
-        $gpuName = & $pythonVenv -c "import torch; print(torch.cuda.get_device_name(0))" 2>$null
+        $gpuName = $gpuInfo[1]
         Write-Host "  ✅ CUDA 可用 - $gpuName" -ForegroundColor Green
     } else {
         Write-Host "  ⚠  CUDA 不可用，将使用 CPU" -ForegroundColor Yellow
@@ -158,7 +159,7 @@ Write-Host "[4/5] 创建命令入口..." -ForegroundColor Yellow
 $batPath = Join-Path $InstallDir "transcribe.bat"
 @"
 @echo off
-"%~dp0.venv_asr\Scripts\python.exe" "%~dp0src\video_asr\cli.py" %*
+"%~dp0.venv_asr\Scripts\python.exe" -m video_asr %*
 "@ | Out-File -FilePath $batPath -Encoding utf8
 
 # 添加到用户 PATH（下次终端生效）
@@ -192,10 +193,11 @@ with wave.open(r'$silentWav', 'wb') as wf:
     wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
     wf.writeframes(b'\x00\x00' * sr * dur)
 from faster_whisper import WhisperModel
-m = WhisperModel('large-v3', device='cuda', compute_type='float16')
-seg, _ = m.transcribe(r'$silentWav', beam_size=5)
-list(seg)
-os.unlink(r'$silentWav')
+cache = os.path.expanduser('~/.cache/huggingface/hub')
+if not any(f.startswith('models--') for f in os.listdir(cache)):
+    m = WhisperModel('large-v3', device='cuda', compute_type='float16')
+    seg, _ = m.transcribe(r'$silentWav', beam_size=5)
+    list(seg)
 print('OK')
 "@ 2>&1
         Write-Host "  ✅ 模型缓存就绪" -ForegroundColor Green
@@ -203,41 +205,16 @@ print('OK')
         Write-Host "  ⚠  模型预热跳过（可后续首次使用时自动下载）" -ForegroundColor Yellow
         if (Test-Path $silentWav) { Remove-Item $silentWav -Force }
     }
+} else {
+    Write-Host "[5/5] 跳过模型缓存预热" -ForegroundColor Gray
 }
 
 # --------------- 6. 模型推荐 ---------------
 Write-Host "[6/6] 检测 GPU 并推荐模型..." -ForegroundColor Yellow
 try {
-    # 检测 GPU
-    $hasGpu = & $pythonVenv -c "import torch; print(torch.cuda.is_available())" 2>$null
-    if ($hasGpu -eq "True") {
-        & $pythonVenv -m video_asr --list-models 2>&1
-        Write-Host ""
-        Write-Host "  选择默认配置 (输入数字后 Enter，或直接 Enter 跳过): " -ForegroundColor Cyan -NoNewline
-        $choice = Read-Host
-        if ($choice -match '^\d+$') {
-            # 从 --recommend 的交互模式提取选择
-            $recs = & $pythonVenv -m video_asr --list-models 2>&1 | Where-Object { $_ -match '^\s+\d+\.' }
-            $idx = [int]$choice - 1
-            if ($idx -ge 0 -and $idx -lt $recs.Count) {
-                $line = $recs[$idx]
-                if ($line -match '^\s+\d+\.\s+(\S+)\s+(\S+)') {
-                    $model = $matches[1]
-                    $ct = $matches[2]
-                    & $pythonVenv -m video_asr --set-default $model $ct 2>&1
-                    Write-Host "  ✅ 默认配置: $model / $ct" -ForegroundColor Green
-                }
-            }
-        } else {
-            Write-Host "  → 跳过" -ForegroundColor Gray
-        }
-    } else {
-        Write-Host "  → 未检测到 GPU，跳过推荐" -ForegroundColor Gray
-    }
+    & $pythonVenv -m video_asr --recommend 2>&1
 } catch {
     Write-Host "  ⚠  推荐步骤跳过: $_" -ForegroundColor Yellow
-} else {
-    Write-Host "[5/5] 跳过模型缓存预热" -ForegroundColor Gray
 }
 
 # --------------- 完成 ---------------
