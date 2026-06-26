@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-asr"
+version = "1.0.0"
+description = "Local video ASR — offline transcription using faster-whisper large-v3. Outputs plain text, SRT, or JSON. GPU-accelerated, data stays local."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["asr", "whisper", "transcription", "video", "speech-to-text"]
+authors = [
+    { name = "lingfeng" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video :: Conversion",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "faster-whisper>=1.1.0",
+    "torch>=2.4.0",
+    "torchaudio>=2.4.0",
+]
+
+[project.optional-dependencies]
+all = [
+    "openai-whisper>=20240930",   # fallback backend
+    "whisperx>=3.2.0",            # speaker diarization
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/lingfeng/video-asr"
+Source = "https://github.com/lingfeng/video-asr"
+BugTracker = "https://github.com/lingfeng/video-asr/issues"
+
+[project.scripts]
+transcribe = "video_asr.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"video_asr" = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
